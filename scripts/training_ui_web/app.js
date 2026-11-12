@@ -11,7 +11,7 @@ const statusNames = {queued:'等待中', running:'运行中', completed:'训练�
 const definitions = {
   identity: [['owner','配置负责人','text'],['exp_name','实验名称','text']],
   data: [['dataset_root','数据集目录（每行一个，可先添加父目录再识别）','paths'],['repo_id','数据集 repo_id','text'],['dataset_version','数据版本','text'],['sources','数据来源（每行一项）','lines'],['assets_dir','归一化统计父目录','path'],['asset_id','统计名称 asset_id','text']],
-  train: [['action_semantics','动作监督','action-semantics'],['batch_size','全局 batch size','int'],['num_train_steps','训练步数','int'],['peak_lr','峰值学习率','float'],['decay_lr','末尾学习率','float'],['warmup_steps','Warmup 步数','int'],['decay_steps','学习率衰减步数','int'],['num_workers','数据 workers','int'],['fsdp_devices','FSDP 分片数','int'],['action_horizon','动作 horizon','int'],['rtc_max_delay','Train RTC 最大延迟（动作步，0=关闭）','int']],
+  train: [['action_semantics','动作监督','action-semantics'],['batch_size','全局 batch size','int'],['num_train_steps','训练步数','int'],['peak_lr','峰值学习率','float'],['decay_lr','末尾学习率','float'],['warmup_steps','Warmup 步数','int'],['decay_steps','学习率衰减步数','int'],['num_workers','数据 workers','int'],['fsdp_devices','FSDP 分片数','int'],['action_horizon','动作 horizon','int']],
   advanced: [['log_interval','日志间隔','int'],['save_interval','权重保存间隔','int'],['keep_period','长期保留间隔（空=关闭）','optional-int'],['seed','总 seed','int'],['model_seed','模型 seed','int'],['data_seed','采样 seed','int'],['augmentation_seed','增强 seed','int'],['weight_decay','Weight decay','float'],['clip_gradient_norm','梯度裁剪','float'],['save_before_step','分阶段保存切换步数','int'],['save_steps_before','切换前保存步数（逗号分隔）','ints'],['save_interval_after','切换后保存间隔','int']],
   runtime: [['weight_path','基础权重 params 路径 / URL','path'],['project_name','W&B 项目','text'],['stats_batch_size','统计计算 batch size','int']],
 };
@@ -45,10 +45,6 @@ function addField(container, definition, value, original) {
     if(!protocol.delta_available){input.querySelector('[value=delta]').disabled=true;wrapper.append(node('small','当前仅番茄 Wuji / Sharpa 支持 delta。','default'));}
   }
   if(['int','float','optional-int'].includes(type)){input.type='number';input.step=type==='float'?'any':'1';}
-  if(key==='rtc_max_delay'){
-    input.min='0';
-    wrapper.append(node('small',`训练时均匀抽取 0 到此值的干净动作前缀（含上限），必须小于 horizon。${protocol.action_hz} Hz 下每步约 ${(1000/protocol.action_hz).toFixed(1)} ms；开启后使用新实验名。`,'default'));
-  }
   input.value=Array.isArray(value)?value.join(type==='lines'?'\n':', '):(value??'');
   const wrap=['path','paths'].includes(type)?node('div',undefined,'path-input'):wrapper;wrap.append(input);
   if(['path','paths'].includes(type)){const browse=node('button','浏览');browse.type='button';browse.addEventListener('click',()=>perform(()=>openBrowser(input)));wrap.append(browse);wrapper.append(wrap);}
@@ -62,7 +58,7 @@ function addField(container, definition, value, original) {
     else if(name.value.endsWith('_'+old))name.value=name.value.slice(0,-old.length)+input.value;
     name.dispatchEvent(new Event('input'));input.dataset.previous=input.value;input.dispatchEvent(new Event('input'));independentStats();
   });
-  if(['rtc_max_delay','action_semantics','assets_dir','asset_id'].includes(key))input.addEventListener('input',renderProtocol);
+  if(['action_semantics','assets_dir','asset_id'].includes(key))input.addEventListener('input',renderProtocol);
   fields.set(key,{input,type});container.append(wrapper);
 }
 function fillForm(result) {
@@ -93,7 +89,7 @@ function syncPaperControls(){
   $('paper-timestamp').checked=['t1','t3'].includes(paperChoice);
   $('paper-correlated').checked=['t2','t3'].includes(paperChoice);
   $('paper-timestamp').disabled=!available;$('paper-correlated').disabled=!available;
-  $('paper-help').textContent=available?'两项同时勾选为 T3；可与 Train RTC 组合。论文功能使用双臂 delta、双手 absolute、完整动作窗口及无放回采样。切换功能自动分配独立统计。':'论文勾选仅支持 30 Hz Sharpa multimodal π0.5 全参；已有自定义论文配置保留原算法。';
+  $('paper-help').textContent=available?'两项同时勾选为 T3。论文功能使用双臂 delta、双手 absolute、完整动作窗口及无放回采样。切换功能自动分配独立统计。':'论文勾选仅支持 30 Hz Sharpa multimodal π0.5 全参；已有自定义论文配置保留原算法。';
   fields.get('action_semantics').input.querySelector('[value=absolute]').disabled=active;
   $('sampling-mode').querySelector('[value=weighted_replacement]').disabled=active;
   if(active){
@@ -114,7 +110,7 @@ function changePaperFeatures(){
 }
 function renderProtocol(){
   const current=key=>fields.get(key)?.input.value??initial[key], p=paperAlgorithm();
-  $('protocol').replaceChildren(node('div',`${protocol.action_dim} 维动作 · 模型 ${protocol.model_action_dim} 维 · ${protocol.action_hz} Hz · ${p?'Paper 专用配置':'普通 π0.5'} · RTC 最大延迟 ${current('rtc_max_delay')} 步 · 动作监督 ${current('action_semantics')}`),node('div','统计资产：'+current('assets_dir')+'/'+current('asset_id')),node('div','英文 prompt 示例：'+protocol.prompt));
+  $('protocol').replaceChildren(node('div',`${protocol.action_dim} 维动作 · 模型 ${protocol.model_action_dim} 维 · ${protocol.action_hz} Hz · ${p?'Paper 专用配置':'普通 π0.5'} · 动作监督 ${current('action_semantics')}`),node('div','统计资产：'+current('assets_dir')+'/'+current('asset_id')),node('div','英文 prompt 示例：'+protocol.prompt));
   if(p)$('protocol').append(node('div',`Paper mode=${p.mode} · beta=${p.beta} · bundle SHA256=${p.asset_sha256||'待计算'}`));
   if(protocol.task_view)$('protocol').append(node('div','保留来源配置的任务筛选 / prompt 规则（见最终配置）。柠檬数据沿用已记录的 209 条筛选。'));
 }

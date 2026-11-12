@@ -1,4 +1,4 @@
-"""Correlated noise prior; training and hard-prefix sampling inherit Pi0 RTC."""
+"""Correlated noise prior; full-window training and sampling inherit Pi0."""
 
 from dataclasses import dataclass
 

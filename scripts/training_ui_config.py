@@ -165,7 +165,6 @@ def config_values(config) -> dict:
         weight_path=config.weight_loader.params_path,
         project_name=config.project_name,
         action_horizon=config.model.action_horizon,
-        rtc_max_delay=config.model.rtc_max_delay,
         action_semantics="delta" if getattr(config.data, "extra_delta_transform", False) else "absolute",
         sampling_mode=config.sampling_mode,
         sampling_groups=[asdict(group) for group in config.sampling_groups],
@@ -199,7 +198,6 @@ def defaults(module: str) -> dict:
             if getattr(config.data.base_config, "task_view", None)
             else None,
             "model_family": "Paper" if getattr(config.data, "paper_contract", None) else "pi05",
-            "rtc_max_delay": config.model.rtc_max_delay,
             "norm_asset": str(Path(config.data.assets.assets_dir) / config.data.assets.asset_id),
             **(
                 {"paper_algorithm": {**config.data.paper_contract(), "asset_sha256": config.model.paper_asset_sha256}}
@@ -223,7 +221,6 @@ def apply_overrides(config, values: dict):
     """Only allow presentation fields; preserve embodiment, task view and freeze filter."""
     allowed = set(TRAIN_INTS + LR_FIELDS + OPT_FIELDS + TEXT_FIELDS + SCHEDULE_FIELDS) | {
         "action_horizon",
-        "rtc_max_delay",
         "action_semantics",
         "sources",
         "sampling_mode",
@@ -386,7 +383,6 @@ def apply_overrides(config, values: dict):
         model=replace(
             config.model,
             action_horizon=values["action_horizon"],
-            rtc_max_delay=values.get("rtc_max_delay", config.model.rtc_max_delay),
         ),
         lr_schedule=replace(config.lr_schedule, **{key: values[key] for key in LR_FIELDS}),
         optimizer=replace(config.optimizer, **{key: values[key] for key in OPT_FIELDS}),

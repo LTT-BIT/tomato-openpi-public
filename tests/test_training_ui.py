@@ -56,10 +56,6 @@ def test_all_baseline_defaults_roundtrip_and_personal_snapshot(entry):
         {"peak_lr": float("nan")},
         {"decay_steps": 1000},
         {"action_horizon": 0},
-        {"rtc_max_delay": -1},
-        {"rtc_max_delay": 50},
-        {"rtc_max_delay": True},
-        {"rtc_max_delay": 1.5},
         {"exp_name": "../escape"},
         {"asset_id": "../escape"},
         {"asset_id": "/escape"},
@@ -72,27 +68,6 @@ def test_invalid_edits_fail_before_saving(change):
     values = {**editor.defaults(BASE)["values"], **change}
     with pytest.raises((ValueError, TypeError)):
         editor.apply_overrides(editor.baseline_config(BASE), values)
-
-
-@pytest.mark.parametrize("entry", [e for e in editor.baseline_catalog() if "fullft" in e["id"]])
-def test_rtc_fullft_ui_and_cli_preserve_dataset_and_trainable_scope(entry):
-    module = entry["id"]
-    baseline = editor.baseline_config(module)
-    values = {**editor.defaults(module)["values"], "rtc_max_delay": 10, "exp_name": "rtc_fullft_test"}
-    assert editor.changed_parameters(module, values) == ["rtc_max_delay"]
-    scope = {}
-    exec(compile(editor.personal_source(module, "alice", values), "personal.py", "exec"), scope)
-    saved = scope["build_config"]()
-    assert saved.model.rtc_max_delay == 10
-    assert saved.freeze_filter == baseline.freeze_filter
-    assert saved.data == baseline.data  # Includes normalization assets and English prompt handling.
-    assert saved.checkpoint_dir != baseline.checkpoint_dir
-    assert editor.baseline_config(module).model.rtc_max_delay == 0
-    resolved = run_training.resolve_experiment(module, ["--model.rtc-max-delay", "10", "--exp-name", "rtc_cli"])
-    assert resolved.model.rtc_max_delay == 10
-    run_training.validate_config(resolved)
-    legacy = {key: value for key, value in editor.defaults(module)["values"].items() if key != "rtc_max_delay"}
-    assert editor.apply_overrides(baseline, legacy) == baseline
 
 
 @pytest.mark.parametrize(("task", "dimension", "second_arm"), [("tomato_wuji", 54, 27), ("tomato_sharpa", 58, 29)])
@@ -591,8 +566,7 @@ def test_personal_catalog_skips_broken_and_external_files(workspace, tmp_path):
 
 
 @pytest.mark.parametrize("trial", ["none", "t1", "t2", "t3"])
-@pytest.mark.parametrize("delay", [0, 10])
-def test_gui_paper_features_save_reload_without_generator(tmp_path, trial, delay):
+def test_gui_paper_features_save_reload_without_generator(tmp_path, trial):
     from openpi.models.pi0_config import Pi0Config
     from openpi.models.pi0_delta_paper import PaperPi0Config
     from openpi.training.delta_paper import PaperSharpaData
@@ -602,11 +576,10 @@ def test_gui_paper_features_save_reload_without_generator(tmp_path, trial, delay
     values = {
         **editor.defaults(module)["values"],
         "paper_trial": trial,
-        "rtc_max_delay": delay,
         "action_semantics": "delta",
         "asset_id": f"gui_{trial}",
         "assets_dir": str(tmp_path),
-        "exp_name": f"gui_{trial}_rtc_{delay}",
+        "exp_name": f"gui_{trial}",
         "dataset_root": "/data/source_a",
         "dataset_roots": ["/data/source_a", "/data/source_b"],
         "sources": ["/data/source_a", "/data/source_b"],
@@ -616,7 +589,6 @@ def test_gui_paper_features_save_reload_without_generator(tmp_path, trial, delay
     is_paper = trial != "none"
     assert type(config.model) is (PaperPi0Config if is_paper else Pi0Config)
     assert isinstance(config.data, PaperSharpaData) == is_paper
-    assert config.model.rtc_max_delay == delay
     assert [spec.root for spec in config.data.lerobot_datasets] == values["dataset_roots"]
     assert config.policy_metadata["dataset_version"] == "gui_two_sources_v1"
     assert config.policy_metadata["source_datasets"] == values["sources"]

@@ -572,18 +572,6 @@ def test_six_original_directories_joint_stats_loader_and_audit(prepared, tmp_pat
     assert ui_config.data.lerobot_datasets == current.data.lerobot_datasets
     assert ui_config.model.paper_asset_sha256 == current.model.paper_asset_sha256
     assert run_training.preflight(ui_config)["norm_provenance"] == "verified"
-    rtc_ui = editor.apply_overrides(
-        current,
-        {
-            **editor.config_values(current),
-            "rtc_max_delay": min(10, horizon - 1),
-            "exp_name": "six_source_t3_rtc_new_run",
-        },
-    )
-    assert rtc_ui.model.rtc_max_delay == min(10, horizon - 1)
-    assert rtc_ui.model.paper_asset_sha256 == current.model.paper_asset_sha256
-    assert rtc_ui.data == current.data
-    assert run_training.preflight(rtc_ui)["norm_provenance"] == "verified"
     changed = editor.config_values(current)
     changed["asset_id"] += "_fresh_ui"
     fresh = editor.apply_overrides(current, changed)

@@ -41,7 +41,7 @@ dependencies = [
 
 
 [project.urls]
-Repository = "https://github.com/Physical-Intelligence/openpi"
+Repository = "https://github.com/LTT-BIT/tomato-openpi-public"
 
 [dependency-groups]
 dev = [

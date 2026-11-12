@@ -67,7 +67,6 @@ class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         self.pi05 = config.pi05
-        self.rtc_max_delay = config.rtc_max_delay
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -139,15 +138,12 @@ class Pi0(_model.BaseModel):
 
     @at.typecheck
     def embed_suffix(
-        self,
-        obs: _model.Observation,
-        noisy_actions: _model.Actions,
-        timestep: at.Float[at.Array, " b"] | at.Float[at.Array, "b ah"],
+        self, obs: _model.Observation, noisy_actions: _model.Actions, timestep: at.Float[at.Array, " b"]
     ) -> tuple[
         at.Float[at.Array, "b s emb"],
         at.Bool[at.Array, "b s"],
         at.Bool[at.Array, " s"],
-        at.Float[at.Array, "b emb"] | at.Float[at.Array, "b s emb"] | None,
+        at.Float[at.Array, "b emb"] | None,
     ]:
         input_mask = []
         ar_mask = []
@@ -162,9 +158,7 @@ class Pi0(_model.BaseModel):
 
         action_tokens = self.action_in_proj(noisy_actions)
         # embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
-        time_emb = posemb_sincos(
-            timestep.reshape(-1), self.action_in_proj.out_features, min_period=4e-3, max_period=4.0
-        ).reshape(*timestep.shape, self.action_in_proj.out_features)
+        time_emb = posemb_sincos(timestep, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0)
         if self.pi05:
             # time MLP (for adaRMS)
             time_emb = self.time_mlp_in(time_emb)
@@ -205,11 +199,7 @@ class Pi0(_model.BaseModel):
         train: bool = False,
         augmentation_rng: at.KeyArrayLike | None = None,
     ) -> at.Float[at.Array, "*b ah"]:
-        if self.rtc_max_delay:
-            preprocess_rng, noise_rng, time_rng, delay_rng = jax.random.split(rng, 4)
-        else:
-            # Keep the original random streams and loss exactly when RTC is off.
-            preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
+        preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         if augmentation_rng is not None:
             preprocess_rng = augmentation_rng
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
@@ -217,14 +207,7 @@ class Pi0(_model.BaseModel):
         batch_shape = actions.shape[:-2]
         noise = self.noise(noise_rng, actions.shape)
         time = jax.random.beta(time_rng, 1.5, 1, batch_shape) * 0.999 + 0.001
-        if self.rtc_max_delay:
-            delay = jax.random.randint(delay_rng, batch_shape, 0, self.rtc_max_delay + 1)
-            action_prefix_mask = jnp.arange(self.action_horizon) < delay[..., None]
-            # OpenPI uses t=0 for clean data (opposite to the RTC paper).
-            time = jnp.where(action_prefix_mask, 0.0, time[..., None])
-            time_expanded = time[..., None]
-        else:
-            time_expanded = time[..., None, None]
+        time_expanded = time[..., None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
@@ -240,13 +223,7 @@ class Pi0(_model.BaseModel):
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
-        if self.rtc_max_delay:
-            # train_step takes a mean over this array. Normalize by the actual
-            # number of supervised tokens, so larger delays do not dilute loss.
-            postfix_mask = ~action_prefix_mask
-            loss = jnp.where(postfix_mask, loss, 0.0) * (loss.size / jnp.sum(postfix_mask))
-        return loss
+        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
 
     @override
     def sample_actions(
@@ -256,26 +233,7 @@ class Pi0(_model.BaseModel):
         *,
         num_steps: int | at.Int[at.Array, ""] = 10,
         noise: at.Float[at.Array, "b ah ad"] | None = None,
-        prefix_actions: at.Float[at.Array, "b ah ad"] | None = None,
-        prefix_length: int = 0,
     ) -> _model.Actions:
-        """Sample a chunk, optionally keeping a committed RTC prefix fixed.
-
-        prefix_actions must be in this observation's normalized model action
-        space, padded to the full horizon. prefix_length is a static integer;
-        pass static_argnames=("prefix_length",) when JIT-compiling this method.
-        Only a checkpoint trained with RTC supports a nonzero prefix.
-        """
-        if type(prefix_length) is not int or not 0 <= prefix_length <= self.rtc_max_delay:
-            raise ValueError("prefix_length must be a static integer in [0, rtc_max_delay]")
-        if prefix_length and prefix_actions is None:
-            raise ValueError("prefix_actions is required for a nonzero prefix_length")
-        if prefix_actions is not None and prefix_actions.shape != (
-            observation.state.shape[0],
-            self.action_horizon,
-            self.action_dim,
-        ):
-            raise ValueError("prefix_actions must have shape (batch, action_horizon, action_dim)")
         observation = _model.preprocess_observation(None, observation, train=False)
         # note that we use the convention more common in diffusion literature, where t=1 is noise and t=0 is the target
         # distribution. yes, this is the opposite of the pi0 paper, and I'm sorry.
@@ -283,9 +241,6 @@ class Pi0(_model.BaseModel):
         batch_size = observation.state.shape[0]
         if noise is None:
             noise = self.noise(rng, (batch_size, self.action_horizon, self.action_dim))
-        action_prefix_mask = jnp.arange(self.action_horizon)[None, :] < prefix_length
-        if prefix_length:
-            noise = jnp.where(action_prefix_mask[..., None], prefix_actions, noise)
 
         # first fill KV cache with a forward pass of the prefix
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
@@ -295,10 +250,9 @@ class Pi0(_model.BaseModel):
 
         def step(carry):
             x_t, time = carry
-            timestep = jnp.broadcast_to(time, batch_size)
-            if prefix_length:
-                timestep = jnp.where(action_prefix_mask, 0.0, timestep[:, None])
-            suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, timestep)
+            suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
+                observation, x_t, jnp.broadcast_to(time, batch_size)
+            )
             # `suffix_attn_mask` is shape (b, suffix_len, suffix_len) indicating how the suffix tokens can attend to each
             # other
             suffix_attn_mask = make_attn_mask(suffix_mask, suffix_ar_mask)
@@ -326,10 +280,7 @@ class Pi0(_model.BaseModel):
             assert prefix_out is None
             v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-            x_next = x_t + dt * v_t
-            if prefix_length:
-                x_next = jnp.where(action_prefix_mask[..., None], prefix_actions, x_next)
-            return x_next, time + dt
+            return x_t + dt * v_t, time + dt
 
         def cond(carry):
             x_t, time = carry

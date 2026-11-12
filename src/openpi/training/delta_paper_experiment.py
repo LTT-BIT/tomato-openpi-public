@@ -100,7 +100,7 @@ def build_no_block_one_dataset(*, owner, trial, root=NO_BLOCK_ONE_ROOT):
     )
 
 
-def build_experiment(*, owner, trial, mode, beta, dataset=None, rtc_max_delay: int = 0):
+def build_experiment(*, owner, trial, mode, beta, dataset=None):
     _validate_labels(owner, trial)
     if mode not in paper.MODES or not 0 <= beta < 1:
         raise ValueError("Unknown paper mode/beta")
@@ -116,8 +116,7 @@ def build_experiment(*, owner, trial, mode, beta, dataset=None, rtc_max_delay: i
     asset_dir = Path(dataset.assets_dir) / dataset.asset_id
     digest = paper.sha256(asset_dir / paper.BUNDLE) if (asset_dir / paper.BUNDLE).is_file() else None
     model = PaperPi0Config(
-        **{f.name: getattr(base.model, f.name) for f in fields(Pi0Config) if f.name != "rtc_max_delay"},
-        rtc_max_delay=rtc_max_delay,
+        **{f.name: getattr(base.model, f.name) for f in fields(Pi0Config)},
         paper_asset_dir=str(asset_dir),
         paper_asset_sha256=digest,
         paper_mode=mode,
@@ -141,8 +140,6 @@ def build_experiment(*, owner, trial, mode, beta, dataset=None, rtc_max_delay: i
         base,
         model=model,
         data=data,
-        name=base.name + (f"_rtc_d{rtc_max_delay}" if rtc_max_delay else ""),
-        exp_name=base.exp_name + (f"_rtc_d{rtc_max_delay}" if rtc_max_delay else ""),
         batch_size=32,
         fsdp_devices=8,
         freeze_filter=model.get_freeze_filter(),

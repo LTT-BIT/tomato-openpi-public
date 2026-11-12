@@ -41,8 +41,6 @@ def test_composition_preserves_baseline_training_semantics(module):
         current_values.pop(key)
     # Preserve historical delta snapshots; explicitly account for the absolute baseline migration.
     snapshot["config_fields"]["data"]["fields"]["extra_delta_transform"] = False
-    # New opt-in behavior must leave every published baseline disabled.
-    snapshot["config_fields"]["model"]["fields"]["rtc_max_delay"] = 0
     # Keep the historical snapshot intact; baseline weights now default to shared server storage.
     snapshot["config_fields"]["weight_loader"]["fields"]["params_path"] = "/mnt/data/public_ckpt/pi05/pi05_base/params"
     old_assets = snapshot["config_fields"]["data"]["fields"]["assets"]["fields"]

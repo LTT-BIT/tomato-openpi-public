@@ -84,8 +84,6 @@ def make_att_2d_masks(pad_masks, att_masks):
 class PI0Pytorch(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.rtc_max_delay:
-            raise NotImplementedError("Training-time RTC is implemented by the JAX trainer, not PI0Pytorch")
         self.config = config
         self.pi05 = config.pi05
 

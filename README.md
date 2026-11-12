@@ -1,6 +1,8 @@
 # Tomato OpenPI 训练仓库
 
-`main` 已集成基础 π0.5、Train RTC、逐时间步归一化和相关高斯噪声，支持普通训练、仅 RTC、仅 T3 及 T3+RTC，按配置分别启用。T3 指逐时间步归一化与相关高斯噪声，RTC 是独立选项。论文训练限 JAX、30 Hz Sharpa multimodal 全参，双臂 Delta、双手 Absolute。当前仅完成软件与离线验证，尚未完成真实数据完整训练或实机验证。
+公开版保留基础 π0.5 训练与 T3：双臂逐未来时间位置 z-score 归一化（`timestamp_zscore_arms`）和相关高斯噪声（`paper_beta=0.5`）。训练监督完整动作窗口。T3 仅支持 JAX、30 Hz Sharpa multimodal 全参；双臂 Delta，双手 Absolute / 全局 quantile。当前完成软件与离线验证，真实数据完整训练和实机验证尚未完成。
+
+本仓库来源于 [tomato-openpi/main](https://github.com/LTT-BIT/tomato-openpi/tree/main)，保留共同 Git 历史。公开版已移除 Train RTC 的训练、采样、配置与界面入口；历史提交保留上游原始内容。逐时间统计、相关矩阵及资产校验实现保持不变。
 
 基于 OpenPI 的 π0.5 训练仓库，使用统一 JAX 入口，支持 FR3/Wuji、FR3/Sharpa、单臂 Franka、双 UR/O30 的 LoRA 与全参数微调。数据转换在独立仓库完成，这里负责数据校验、归一化统计和训练。
 
@@ -22,8 +24,8 @@
 
 ```bash
 git clone --branch main \
-  ssh://git@gitlab.litchibot.top:2222/fruit-train/tomato-openpi.git
-cd tomato-openpi
+  https://github.com/LTT-BIT/tomato-openpi-public.git
+cd tomato-openpi-public
 ```
 
 **启动图形界面**，在自己的仓库根目录执行：
@@ -35,7 +37,7 @@ bash scripts/python.sh -m wandb login
 bash scripts/python.sh -m scripts.training_ui --port 8765
 ```
 
-Sharpa multimodal 全参训练可在「03 训练参数 → 论文功能」直接勾选「逐时间步归一化」和「相关噪声」，两项同时选择为 T3；配合 Train RTC 最大延迟（例如10）即可使用融合训练，无需先运行个人配置生成命令。切换功能自动使用独立统计名称，并固定双臂 delta、双手 absolute 与无放回完整窗口采样；点击启动时保存可复现个人配置。已有个人配置会还原算法选项，单独修改 RTC 可复用匹配统计。当前完成的是配置与软件测试，尚不代表真实数据训练或实机验证完成。同步代码后须重启自己的 UI 进程并刷新页面。
+Sharpa multimodal 全参训练可在「03 训练参数 → 论文功能」直接勾选「逐时间步归一化」和「相关噪声」，两项同时选择为 T3，无需先运行个人配置生成命令。切换功能自动使用独立统计名称，并固定双臂 delta、双手 absolute 与无放回完整窗口采样；点击启动时保存可复现个人配置。已有个人配置会还原算法选项，当前完成的是配置与软件测试，尚不代表真实数据训练或实机验证完成。同步代码后须重启自己的 UI 进程并刷新页面。
 
 **在自己的电脑打开服务器 UI**：服务监听服务器的 `127.0.0.1:8765`，需要通过 SSH 转发到本地。
 
@@ -119,8 +121,8 @@ curl -LsSf https://astral.sh/uv/0.12.10/install.sh | sh
 
 ```bash
 git clone --branch main \
-  ssh://git@gitlab.litchibot.top:2222/fruit-train/tomato-openpi.git
-cd tomato-openpi
+  https://github.com/LTT-BIT/tomato-openpi-public.git
+cd tomato-openpi-public
 unset PI05_SHARED_ENV
 bash scripts/setup_training_env.sh --local
 ```
@@ -156,50 +158,6 @@ baseline 默认基础权重为服务器路径 `/mnt/data/public_ckpt/pi05/pi05_b
 番茄与杯子配置采用以下公共训练参数；Sharpa 全参覆盖为 batch 32、FSDP 8（默认 8 卡），Sharpa LoRA 保持 batch 8、FSDP 1，两者从转换器 116D 状态提取 58D 位置并重排动作，详见 [Sharpa 说明](training_configs/experiments/tomato_sharpa/README.md)。柠檬 LoRA 复用公共训练配方，柠檬全参学习率与公共配方一致，日志与 checkpoint 保存设置沿用来源任务记录，详见[柠檬说明](training_configs/experiments/lemon_scooping/README.md)。以下公共参数中的频率与动作语义以各任务协议为准。
 
 本体协议、数据身份、统计及英文 prompt 见对应任务说明。
-
-## π0.5 全参微调加入 Train RTC
-
-JAX 入口支持 training-time RTC，依据 [Physical Intelligence 官方实现（9296f31）](https://github.com/Physical-Intelligence/real-time-chunking-kinetix/blob/9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b/src/model.py)和[训练时动作条件论文](https://arxiv.org/abs/2512.05964)。当前状态：**代码及小模型前向、反向、采样验证已完成；任务完整训练和实机验证尚未完成。**不改变现有八份 baseline，默认 `model.rtc_max_delay=0` 关闭；PyTorch 入口遇到启用 RTC 的配置会明确报错。
-
-开启后，每条样本独立均匀抽取整数延迟 `d ∈ [0, rtc_max_delay]`（含上限）。前 `d` 个动作使用同一动作窗口中的干净真值，后缀保持原有 Beta 时间分布和 flow matching 噪声；每个动作 token 单独接收时间编码和 adaRMS 条件。OpenPI 的干净动作时间为 **0**，与官方 Kinetix 的 **1** 相反。仅后缀参与损失，按 batch 内有效后缀 token 总数归一化，再对动作维度取平均。模型参数名称、形状和全参可训练范围保持不变，可加载普通 π0.5 全参权重。
-
-这里的均匀延迟分布采用论文实机实验的设置；官方 Kinetix 模拟代码使用指数递减采样，并以 `simulated_delay` 表示不包含的上界，不能直接照搬其数值。`rtc_max_delay` 必须小于动作 horizon；例如 30 Hz 下设为 10 覆盖约 333 ms 的延迟，10 Hz 下则是 1 s。应依据部署端测得的端到端延迟选择，`10` 只是配置示例。
-
-**图形界面**：选择对应任务的全参 baseline 或个人全参配置，在“Train RTC 最大延迟（动作步，0=关闭）”填写上限，并使用新的实验名称。修改会保存到独立个人配置、最终配置预览和运行记录中。只改变 RTC 不改变数据变换，因此数据、horizon、动作语义均相同时可继续使用经过来源校验的原归一化统计；同时更换数据、horizon 或 absolute/delta 时仍需按现有规则重新统计。
-
-**命令行**：以下以 Wuji 全参为例，Sharpa / 杯子 / 柠檬替换为各自全参模块。先按任务说明准备数据、英文 `tasks.jsonl` 和归一化统计，再检查最终配置：
-
-```bash
-export MODULE=training_configs.experiments.tomato_wuji.baseline.tomato_fr3_fullft_v1
-export EXP=tomato_fullft_rtc_d10_s42_run01
-bash scripts/python.sh -m scripts.run_training "$MODULE" \
-  --exp-name "$EXP" --model.rtc-max-delay 10 --dry-run
-```
-
-启动时使用完全相同的参数，把 `--dry-run` 换为 `--wandb-mode online`；无法联网时明确使用 `--wandb-mode offline`。本地日志、完整生效配置、数据来源、实际英文 prompt、统计路径和哈希仍由统一入口保存，W&B 同时记录；离线 run 联网后执行 `bash scripts/python.sh -m wandb sync wandb/offline-run-...`。
-
-上例默认从所选配置的基础权重开始全参 RTC 微调。若要在**已经训练好的同本体全参 checkpoint** 上追加 RTC 训练，复制该实验配置为新的个人配置（保留它的数据、动作监督、统计和模型设置），将权重加载器设置为严格加载：
-
-```python
-from dataclasses import replace
-from openpi.training.weight_loaders import CheckpointWeightLoader
-
-# config 为原全参实验的 TrainConfig；路径替换为实际 checkpoint 的 params 目录。
-config = replace(
-    config,
-    name=config.name + "_rtc_v1_d10",
-    exp_name="tomato_fullft_rtc_stage2_s42_run01",
-    model=replace(config.model, rtc_max_delay=10),
-    weight_loader=CheckpointWeightLoader("/path/to/checkpoints/config/experiment/step/params"),
-    resume=False,
-)
-```
-
-这是一个从已有模型权重初始化的新训练阶段，优化器、学习率计划和步数重新开始；按实验预算设置，不自动假定 30,000 步合适。不能用普通实验的 `--resume` 来切换 RTC；`--resume` 仅用于配置保持一致的 RTC 实验中断恢复。旧数据、checkpoint 和统计不会随代码分发。
-
-训练后的模型提供 `sample_actions(..., prefix_actions=..., prefix_length=d)`，逐次去噪并在最终输出保留已提交前缀。`prefix_actions` 必须是与**当前观测**一致的归一化模型动作空间，形状为 `[batch, horizon, action_dim]`，仅前 `d` 步有效；不能直接传物理单位或旧观测下的 delta 动作。`d` 是不超过训练上限的静态整数；使用 `module_jit` 时加 `static_argnames=("prefix_length",)`。初次推理可使用 `d=0`。
-
-该接口返回完整动作窗口。部署端还需按观测时刻对齐旧队列中的已提交动作，在后台生成后缀，并避免重复执行前缀；执行步数 `s` 需满足 `d <= horizon - s`。本仓库没有接入机器人异步执行队列，接口测试不能替代实机衔接、延迟和任务成功率验证。
 
 ## 公共训练参数
 
@@ -309,17 +267,20 @@ Sharpa可在本地 `template/<负责人>/` 选择双臂Delta、逐未来时间�
 
 论文训练实验现支持原目录中的no-block-one六份摘番茄数据联合加载，逐源完整窗口、统一统计及独立个人配置；使用方法见[任务说明](training_configs/experiments/tomato_sharpa/README.md#no-block-one-六份摘番茄数据联合实验)。原baseline保持原样。
 
-## 同一 UI 中的普通训练、原始 trainRTC、T3 与 T3+RTC
+## 普通训练与 T3
 
-| 选择的配置 | `rtc_max_delay` | 实际训练路径 |
-| --- | ---: | --- |
-| 正式 Sharpa 全参 baseline / 非 Paper 个人配置 | 0 | 原生 Pi0、标准高斯、原始数据与统计路径 |
-| 同一非 Paper 配置 | 10 | 原生 trainRTC；不需要 Paper 统计或相关噪声 |
-| Paper T3 个人配置 | 0 | `timestamp_zscore_arms` + `paper_beta=0.5`，无 RTC |
-| 同一 Paper T3 配置、同一统计身份 | 10 | T3 相关高斯与主线 trainRTC 同时生效 |
+选择正式 Sharpa 全参 baseline 可运行普通 π0.5；在「03 训练参数 → 论文功能」勾选逐时间步归一化和相关噪声即可运行 T3。两项功能可独立选择，T0/T1/T2/T3/TG 对照与单源、六源数据入口保留。切换算法需独立统计和新实验名，不能混用 checkpoint 或续训合同。
 
-普通训练在配置列表选择正式全参 baseline，直接编辑原有“Train RTC 最大延迟”；T3 则先用个人配置生成器创建并选择 `delta_paper_t3`（六源版本为 `delta_paper_no_block_one_t3`），仍用同一字段切换 0/10，不新增全局 Paper 开关。配置摘要显示模型类型、有效 RTC、Paper mode/beta（仅 Paper）、动作监督、统计路径及 bundle 摘要。`paper_beta=0` 仅关闭相关噪声，仍是 Paper 数据/归一化路径，不能代替非 Paper 的原始 trainRTC。
+## 跟踪原仓库 main
 
-`10` 表示每条训练样本均匀采样 0～10 步干净前缀，含两端，并非固定10步。T3 噪声先生成完整相关块，再用真值覆盖前缀；仅监督后缀，按有效 token 总数归一化。模型只保留一份 `Pi0.compute_loss/sample_actions`，Paper 子类只改变噪声。**不实现论文第9页的 correlation-aware correction、条件协方差修正或 soft inpainting。** PyTorch 不支持此组合。
+公开版使用 `origin` 推送到本仓库，使用 `upstream` 跟踪原仓库 main：
 
-仅改 RTC、实验名、batch 等可在合同一致时复用原 T3 的四个资产文件；改变 mode/beta/horizon/数据必须使用匹配的独立资产，不能覆盖或跳过摘要检查。新 RTC 实验必须使用新实验名，已有 T3 权重可作为新 run 的初始化，不能以 `resume` 强行切换算法。生成命令、资产校验、跨 chunk 物理前缀接口和验证边界见 [Sharpa T3+RTC 说明](training_configs/experiments/tomato_sharpa/README.md#t3--trainrtc-集成)。
+```bash
+git remote add upstream https://github.com/LTT-BIT/tomato-openpi.git
+git fetch upstream main
+git branch --set-upstream-to=upstream/main main
+git config branch.main.pushRemote origin
+git config push.default current
+```
+
+运行 `git fetch upstream` 获取后续更新，审查后执行 `git merge upstream/main`，处理公开版差异并运行 `bash scripts/check_training.sh` 后再 `git push origin main`。上游包含 Train RTC，合并时须保持本公开版的完整窗口训练行为和接口约束。统计实现如有变化，应按资产合同重新生成统计，不能跳过来源和摘要检查。

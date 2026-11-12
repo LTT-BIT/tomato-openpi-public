@@ -19,10 +19,10 @@ CHECK_PATHS=(
   training_configs tests
   scripts/create_delta_paper_experiments.py
   src/openpi/models/pi0.py src/openpi/models/pi0_config.py src/openpi/models/pi0_delta_paper.py
-  src/openpi/models/pi0_rtc_test.py src/openpi/models/pi0_test.py src/openpi/models/gemma.py
+  src/openpi/models/pi0_test.py src/openpi/models/gemma.py
   src/openpi/shared/delta_paper.py src/openpi/training/delta_paper.py
   src/openpi/training/delta_paper_experiment.py src/openpi/training/delta_paper_stats.py
-  src/openpi/training/delta_paper_ui.py src/openpi/training/delta_paper_prefix.py
+  src/openpi/training/delta_paper_ui.py
   scripts/training_ui.py scripts/training_ui_config.py
   scripts/run_training.py scripts/compute_experiment_norm.py scripts/train.py scripts/train_reproducibility_test.py
   src/openpi/training/norm_provenance.py examples/fr3_wuji/compute_norm_stats.py
@@ -54,7 +54,7 @@ for experiment in \
 done
 
 bash scripts/python.sh -m pytest tests \
-  src/openpi/models/pi0_rtc_test.py src/openpi/models/pi0_test.py \
+  src/openpi/models/pi0_test.py \
   src/openpi/training/sampling_test.py src/openpi/training/reproducibility_test.py \
   src/openpi/training/weight_loaders_test.py src/openpi/training/data_loader_test.py \
   src/openpi/policies/fr3_wuji_policy_test.py src/openpi/transforms_test.py \

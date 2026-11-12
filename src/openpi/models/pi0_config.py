@@ -32,19 +32,11 @@ class Pi0Config(_model.BaseModelConfig):
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
 
-    # JAX training-time RTC: uniformly sample a clean action prefix of length
-    # 0..rtc_max_delay (inclusive). Zero preserves ordinary flow matching.
-    rtc_max_delay: int = 0
-
     pytorch_compile_mode: str | None = "max-autotune"
 
     def __post_init__(self):
         if type(self.action_horizon) is not int or self.action_horizon <= 0:
             raise ValueError("action_horizon must be a positive integer")
-        if type(self.rtc_max_delay) is not int or not 0 <= self.rtc_max_delay < self.action_horizon:
-            raise ValueError("rtc_max_delay must be an integer in [0, action_horizon)")
-        if self.rtc_max_delay and not self.pi05:
-            raise ValueError("Training-time RTC currently requires pi05=True")
         if self.max_token_len is None:
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:

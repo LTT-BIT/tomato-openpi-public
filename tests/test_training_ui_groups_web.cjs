@@ -125,19 +125,19 @@ test('launch request carries every selected root in order while one root keeps l
   assert.equal(run('request().values.dataset_roots'),undefined);
 });
 
-test('four-mode summary shows effective RTC and Paper details only for Paper',()=>{
+test('summary shows Paper details only for Paper',()=>{
   const {run,elements}=setup();
   elements.set('protocol',new Element('div'));
-  run(`initial={rtc_max_delay:0,action_semantics:'absolute',assets_dir:'/assets',asset_id:'ordinary'};
+  run(`initial={action_semantics:'absolute',assets_dir:'/assets',asset_id:'ordinary'};
     protocol={action_dim:58,model_action_dim:58,action_hz:30,model_family:'pi05',prompt:'Pick tomato.'};
-    fields.set('rtc_max_delay',{input:{value:10}});renderProtocol();`);
+    renderProtocol();`);
   let text=elements.get('protocol').children.map(el=>el.textContent).join('\n');
-  assert.match(text,/普通 π0.5.*RTC 最大延迟 10/);
+  assert.match(text,/普通 π0.5/);
   assert.doesNotMatch(text,/beta=/);
   assert.match(text,/\/assets\/ordinary/);
   run(`protocol.model_family='Paper';protocol.paper_algorithm={mode:'timestamp_zscore_arms',beta:.5,asset_sha256:'fixture-hash'};renderProtocol();`);
   text=elements.get('protocol').children.map(el=>el.textContent).join('\n');
-  assert.match(text,/Paper 专用配置.*RTC 最大延迟 10/);
+  assert.match(text,/Paper 专用配置/);
   assert.match(text,/timestamp_zscore_arms.*beta=0.5.*fixture-hash/);
 });
 
@@ -157,7 +157,7 @@ test('GUI checkboxes select T1/T2/T3, lock sampling, rotate assets and restore n
   elements.get('sampling-mode').append(Object.assign(new Element('option'),{value:'weighted_replacement'}));
   run(`initial={paper_trial:'none',asset_id:'ordinary',assets_dir:'/assets'};
     protocol={paper_available:true,action_dim:58,model_action_dim:58,action_hz:30,prompt:'Pick tomato.'};
-    for(const [key,value] of Object.entries({exp_name:'run01',asset_id:'ordinary',assets_dir:'/assets',rtc_max_delay:'10'}))fields.set(key,{input:{value}});
+    for(const [key,value] of Object.entries({exp_name:'run01',asset_id:'ordinary',assets_dir:'/assets'}))fields.set(key,{input:{value}});
     `);
   const input=new Element('select');input.value='absolute';input.append(Object.assign(new Element('option'),{value:'absolute'}));
   context.inputForTest=input;
